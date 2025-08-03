@@ -1,0 +1,7 @@
+streamlit
+gspread
+oauth2client
+plotly
+pandas
+xlsxwriter
+qrcode
