@@ -103,7 +103,7 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.success("Data refreshed!")
 
 # -------------------------
-# Direct QR Link Mode
+# Direct QR Link Mode (Read-Only)
 # -------------------------
 query_params = st.query_params
 if "id" in query_params:
@@ -111,13 +111,8 @@ if "id" in query_params:
     members = cached_load(sheet, "Members")
     fees = cached_load(sheet, "Fees")
 
-    # Normalize IDs
     members["Member ID"] = members["Member ID"].astype(str).str.strip().str.lower()
     fees["Member ID"] = fees["Member ID"].astype(str).str.strip().str.lower()
-
-    st.write("🔎 Debug Info")  # remove later
-    st.write("Scanned ID:", scanned_id)
-    st.write("Available IDs:", members["Member ID"].tolist())
 
     member_info = members[members["Member ID"] == scanned_id]
 
@@ -133,24 +128,20 @@ if "id" in query_params:
             my_fees["Remaining Due"] = my_fees["Remaining Due"].apply(lambda x: safe_int(x, 0))
             st.write("### 📊 Payment History")
             st.dataframe(my_fees[["Month", "Monthly Fee", "Paid Amount", "Remaining Due"]])
+
+            st.plotly_chart(
+                px.bar(my_fees, x="Month", y=["Paid Amount", "Remaining Due"],
+                       barmode="group", title="Monthly Payments"),
+                use_container_width=True
+            )
         else:
             st.info("No payment records found yet.")
-
-        st.write("### ➕ Add New Payment")
-        with st.form("qr_payment_form"):
-            month = st.text_input("Payment Month", value=date.today().strftime("%b-%y"))
-            paid_amount = st.number_input("Paid Amount", min_value=0)
-            submit = st.form_submit_button("Save Payment")
-            if submit:
-                add_or_update_fee(sheet, scanned_id, month, paid_amount)
-                st.success(f"✅ Payment of {paid_amount} recorded for {member_name} ({month})")
-                st.rerun()
     else:
         st.error(f"❌ Member with ID {scanned_id} not found.")
     st.stop()
 
 # -------------------------
-# Login System
+# Login System (Admin Only)
 # -------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -159,7 +150,7 @@ if "logged_in" not in st.session_state:
     st.session_state.member_id = None
 
 if not st.session_state.logged_in:
-    st.subheader("🔐 Admin/User Login")
+    st.subheader("🔐 Admin Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     members = cached_load(sheet, "Members")
@@ -167,32 +158,27 @@ if not st.session_state.logged_in:
     if st.button("Login"):
         user = members[(members["Username"] == username) &
                        (members["Password"] == password) &
+                       (members["Role"] == "admin") &
                        (members["Status"] == "Active")]
         if not user.empty:
             st.session_state.logged_in = True
-            st.session_state.role = user.iloc[0]["Role"]
+            st.session_state.role = "admin"
             st.session_state.username = username
-            st.session_state.member_id = str(user.iloc[0]["Member ID"]).strip().lower()
-            st.success(f"Welcome, {user.iloc[0]['Name']} ({st.session_state.role})")
+            st.success(f"Welcome, {user.iloc[0]['Name']} (Admin)")
             st.rerun()
         else:
-            st.error("Invalid credentials or inactive account.")
+            st.error("Invalid admin credentials or inactive account.")
 
 else:
-    st.sidebar.success(f"Logged in as {st.session_state.username} ({st.session_state.role})")
+    st.sidebar.success(f"Logged in as {st.session_state.username} (Admin)")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.rerun()
 
-    if st.session_state.role == "admin":
-        menu = st.sidebar.selectbox("Navigation", 
-            ["Dashboard", "Members", "Fees", "User Management", "QR Generator"])
-    else:
-        menu = "My Payments"
+    menu = st.sidebar.selectbox("Navigation", 
+        ["Dashboard", "Members", "Fees", "User Management", "QR Generator"])
 
-    # -------------------------
     # Dashboard
-    # -------------------------
     if menu == "Dashboard":
         st.subheader("📊 Admin Dashboard")
         members = cached_load(sheet, "Members")
@@ -241,16 +227,12 @@ else:
                 use_container_width=True
             )
 
-    # -------------------------
     # Members Page
-    # -------------------------
     elif menu == "Members":
         st.subheader("👥 All Members")
         st.dataframe(cached_load(sheet, "Members"), use_container_width=True)
 
-    # -------------------------
     # Fees Page
-    # -------------------------
     elif menu == "Fees":
         st.subheader("💰 All Fee Records")
         fees = cached_load(sheet, "Fees")
@@ -265,15 +247,12 @@ else:
                 add_or_update_fee(sheet, member_id, month, paid_amount)
                 st.success(f"Payment updated for {member_id} ({month})")
 
-    # -------------------------
-    # User Management Page
-    # -------------------------
+    # User Management
     elif menu == "User Management":
         st.subheader("👤 Add / Edit Members")
         members = cached_load(sheet, "Members")
         st.dataframe(members, use_container_width=True)
 
-        # Add New Member
         with st.expander("➕ Add New Member"):
             with st.form("add_member"):
                 member_id = st.text_input("Member ID")
@@ -294,7 +273,6 @@ else:
                     st.success(f"✅ Member {name} added successfully!")
                     st.rerun()
 
-        # Edit Existing Member
         with st.expander("✏️ Edit Existing Member"):
             if not members.empty:
                 edit_id = st.selectbox("Select Member ID to Edit", members["Member ID"])
@@ -323,9 +301,7 @@ else:
                                 st.success(f"✅ Member {name} updated successfully!")
                                 st.rerun()
 
-    # -------------------------
     # QR Generator
-    # -------------------------
     elif menu == "QR Generator":
         st.subheader("📦 Bulk QR Code Generator")
         members = cached_load(sheet, "Members")
@@ -341,14 +317,3 @@ else:
             zip_buf.seek(0)
             st.download_button("⬇️ Download All QR Codes", data=zip_buf,
                                file_name="All_QR_Codes.zip", mime="application/zip")
-
-    # -------------------------
-    # My Payments
-    # -------------------------
-    elif menu == "My Payments":
-        st.subheader("💳 My Monthly Payments")
-        fees = cached_load(sheet, "Fees")
-        my_fees = fees[fees["Member ID"] == st.session_state.member_id]
-        if not my_fees.empty:
-            my_fees["Remaining Due"] = my_fees["Remaining Due"].apply(lambda x: safe_int(x, 0))
-            st.dataframe(my_fees, use_container_width=True)
