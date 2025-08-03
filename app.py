@@ -87,7 +87,7 @@ st.set_page_config(page_title="Member Fee Tracker", layout="wide")
 st.title("🏋 Member Fee & Attendance Tracker")
 
 SHEET_ID = "1aiDyNeK_T3eovJ3_g3D0iXHjh3lLpHJLktGmrzjnp5E"
-APP_URL = "https://your-app-url.streamlit.app"  # Replace with your Streamlit Cloud URL
+APP_URL = "https://monthly-fee-tracker-expjkaupcdyn9ahcyicht3.streamlit.app/"  # Replace with your deployed URL
 
 sheet = get_sheet(SHEET_ID)
 ensure_sheets_and_headers(sheet)
@@ -140,7 +140,7 @@ if "id" in query_params:
     st.stop()
 
 # -------------------------
-# Admin / User Login System
+# Login System
 # -------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -181,7 +181,7 @@ else:
         menu = "My Payments"
 
     # -------------------------
-    # Admin Dashboard
+    # Dashboard
     # -------------------------
     if menu == "Dashboard":
         st.subheader("📊 Admin Dashboard")
@@ -196,21 +196,13 @@ else:
             merged["Paid Amount"] = merged["Paid Amount"].fillna(0).astype(int)
             merged["Remaining Due"] = merged["Remaining Due"].fillna(0).astype(int)
 
-            # Month-wise Summary
             monthly_summary = merged.groupby("Month").agg(
                 Total_Fees=("Monthly Fee", "sum"),
                 Total_Received=("Paid Amount", "sum"),
                 Total_Due=("Remaining Due", "sum")
             ).reset_index()
 
-            st.write("### 📅 Month-wise Summary")
-            styled_summary = monthly_summary.style.apply(
-                lambda row: ['background-color: lightcoral' if row["Total_Due"] > 0 
-                             else 'background-color: lightgreen'] * len(row),
-                axis=1
-            )
-            st.dataframe(styled_summary, use_container_width=True)
-
+            st.dataframe(monthly_summary, use_container_width=True)
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Fees Expected", monthly_summary["Total_Fees"].sum())
             col2.metric("Total Payments Received", monthly_summary["Total_Received"].sum())
@@ -222,56 +214,81 @@ else:
                 use_container_width=True
             )
 
-            st.plotly_chart(
-                px.line(monthly_summary, x="Month", y="Total_Due", markers=True,
-                        title="Outstanding Dues Over Time"),
-                use_container_width=True
-            )
-
-            # Member-wise Summary
-            st.write("### 👤 Member-wise Outstanding Dues")
-            member_summary = merged.groupby(["Member ID", "Name"]).agg(
-                Total_Fees=("Monthly Fee", "sum"),
-                Total_Received=("Paid Amount", "sum"),
-                Total_Due=("Remaining Due", "sum")
-            ).reset_index()
-
-            styled_member_summary = member_summary.style.apply(
-                lambda row: ['background-color: lightcoral' if row["Total_Due"] > 0 
-                             else 'background-color: lightgreen'] * len(row),
-                axis=1
-            )
-            st.dataframe(styled_member_summary, use_container_width=True)
-
-            st.plotly_chart(
-                px.bar(member_summary, x="Name", y="Total_Due",
-                       color="Total_Due", title="Outstanding Dues per Member"),
-                use_container_width=True
-            )
-
-            # Export to Excel
-            st.write("### 📂 Export Reports")
-            excel_buffer = BytesIO()
-            with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
-                monthly_summary.to_excel(writer, index=False, sheet_name="Month Summary")
-                member_summary.to_excel(writer, index=False, sheet_name="Member Summary")
-
-                workbook = writer.book
-                money_fmt = workbook.add_format({'num_format': '#,##0'})
-                for sheetname in ["Month Summary", "Member Summary"]:
-                    worksheet = writer.sheets[sheetname]
-                    worksheet.set_column("B:D", 18, money_fmt)
-
-            excel_buffer.seek(0)
-            st.download_button(
-                label="⬇️ Download Dashboard Report (Excel)",
-                data=excel_buffer,
-                file_name="Dashboard_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    # -------------------------
+    # Members Page
+    # -------------------------
+    elif menu == "Members":
+        st.subheader("👥 All Members")
+        members = cached_load(sheet, "Members")
+        st.dataframe(members, use_container_width=True)
 
     # -------------------------
-    # User View
+    # Fees Page
+    # -------------------------
+    elif menu == "Fees":
+        st.subheader("💰 All Fee Records")
+        fees = cached_load(sheet, "Fees")
+        st.dataframe(fees, use_container_width=True)
+
+        st.write("### ✍️ Record a Payment")
+        members = cached_load(sheet, "Members")
+        with st.form("add_payment"):
+            member_id = st.selectbox("Select Member", members["Member ID"])
+            month = st.text_input("Payment Month", value=date.today().strftime("%b-%y"))
+            paid_amount = st.number_input("Paid Amount", min_value=0)
+            submit = st.form_submit_button("Save Payment")
+            if submit:
+                add_or_update_fee(sheet, member_id, month, paid_amount)
+                st.success(f"Payment updated for {member_id} ({month})")
+
+    # -------------------------
+    # User Management Page
+    # -------------------------
+    elif menu == "User Management":
+        st.subheader("👤 Add / Edit Members")
+        members = cached_load(sheet, "Members")
+        st.dataframe(members, use_container_width=True)
+
+        with st.form("add_member"):
+            member_id = st.text_input("Member ID")
+            name = st.text_input("Name")
+            contact = st.text_input("Contact")
+            status = st.selectbox("Status", ["Active", "Inactive"])
+            absence_fee = st.number_input("Absence Fee", min_value=0, value=0)
+            monthly_fee = st.number_input("Monthly Fee", min_value=0, value=2000)
+            username = st.text_input("Username")
+            password = st.text_input("Password")
+            role = st.selectbox("Role", ["user", "admin"])
+            submitted = st.form_submit_button("Add Member")
+            if submitted:
+                append_data(sheet, "Members", [
+                    member_id, name, contact, status, absence_fee, monthly_fee,
+                    username, password, role
+                ])
+                st.success(f"✅ Member {name} added successfully!")
+
+    # -------------------------
+    # QR Generator
+    # -------------------------
+    elif menu == "QR Generator":
+        st.subheader("📦 Bulk QR Code Generator")
+        members = cached_load(sheet, "Members")
+
+        if st.button("Generate QR Codes"):
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "w") as zipf:
+                for _, row in members.iterrows():
+                    qr_link = f"{APP_URL}?id={row['Member ID']}"
+                    qr_img = qrcode.make(qr_link)
+                    qr_buf = BytesIO()
+                    qr_img.save(qr_buf, format="PNG")
+                    zipf.writestr(f"{row['Name']}_{row['Member ID']}.png", qr_buf.getvalue())
+            zip_buf.seek(0)
+            st.download_button("⬇️ Download All QR Codes", data=zip_buf,
+                               file_name="All_QR_Codes.zip", mime="application/zip")
+
+    # -------------------------
+    # User Payments Page
     # -------------------------
     elif menu == "My Payments":
         st.subheader("💳 My Monthly Payments")
@@ -286,14 +303,7 @@ else:
             my_fees["Monthly Fee"] = member_fee
             my_fees["Remaining Due"] = my_fees["Remaining Due"].astype(int)
 
-            st.write("### 📊 My Payment History")
-            styled_df = my_fees[["Month", "Monthly Fee", "Paid Amount", "Remaining Due"]].style.apply(
-                lambda row: ['background-color: lightcoral' if row["Remaining Due"] > 0 
-                             else 'background-color: lightgreen'] * len(row),
-                axis=1
-            )
-            st.dataframe(styled_df, use_container_width=True)
-
+            st.dataframe(my_fees, use_container_width=True)
             st.plotly_chart(
                 px.bar(my_fees, x="Month", y=["Paid Amount", "Remaining Due"], 
                        barmode="group", title="My Monthly Payments"),
