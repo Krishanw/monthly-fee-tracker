@@ -12,14 +12,14 @@ import json
 # ==============================
 # Page Config MUST be first
 # ==============================
-st.set_page_config(page_title="🏋 Member Fee & Attendance Tracker", layout="wide")
+st.set_page_config(page_title="සුහද එකමුතු මොළගොඩ වත්ත ග්‍රාම සංවර්ධන සමිතිය", layout="wide")
 
 # ==============================
 # Language Dictionary
 # ==============================
 LANGUAGES = {
     "English": {
-        "title": "🏋 Member Fee & Attendance Tracker",
+        "title": "සුහද එකමුතු මොළගොඩ වත්ත ග්‍රාම සංවර්ධන සමිතිය",
         "login": "🔐 Admin Login",
         "username": "Username",
         "password": "Password",
@@ -364,3 +364,4 @@ else:
             zip_buf.seek(0)
             st.download_button(t["download_qr"], data=zip_buf,
                                file_name="All_QR_Codes.zip", mime="application/zip")
+
